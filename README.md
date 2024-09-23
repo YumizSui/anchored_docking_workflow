@@ -36,3 +36,8 @@ python anchored_docking.py \
 ```
 
 <img src="docked_pose.png" width="60%">
+
+- green: receptor (Bace1)
+- cyan: template ligand (CAT-4j)
+- magenta: docked CAT-13f
+- yellow: CAT-13f Pose used in [Wang-FEP-dataset](https://github.com/ohuelab/Wang-FEP-dataset)
