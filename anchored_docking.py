@@ -78,12 +78,6 @@ def prepare_docking_directory(docking_dir, force):
         else:
             raise ValueError(f"Directory '{docking_dir}' already exists. Use --force to overwrite.")
 
-def load_molecules(template_file, input_file):
-    template_mol = Chem.SDMolSupplier(template_file)[0]
-    input_mol = Chem.SDMolSupplier(input_file)[0]
-    if template_mol is None or input_mol is None:
-        raise ValueError("Failed to load molecule files.")
-    return template_mol, input_mol
 
 def prepare_boxsize_file(docking_dir, size, center_of_mass):
     grid_dict = {
@@ -298,61 +292,68 @@ def main():
     prepare_docking_directory(args.docking_dir, args.force)
 
     # Load molecules
-    template_mol, input_mol = load_molecules(args.template_file, args.input_file)
+    template_mol = Chem.SDMolSupplier(args.template_file)[0]
+    input_mols = list(Chem.SDMolSupplier(args.input_file))
+    if template_mol is None or input_mols is None:
+        raise ValueError("Failed to load molecule files.")
 
-    # Calculate center of mass for the grid center
-    center_of_mass = calculate_center_of_mass(template_mol)
+    for index, input_mol in enumerate(input_mols):
+        docking_dir = os.path.join(args.docking_dir, str(index))
+        os.makedirs(docking_dir)
 
-    # Prepare boxsize.txt
-    prepare_boxsize_file(args.docking_dir, args.size, center_of_mass)
+        # Calculate center of mass for the grid center
+        center_of_mass = calculate_center_of_mass(template_mol)
 
-    # Find anchor points
-    anchor_patterns, anchor_positions, pattern_mol = find_anchor_points(
-        template_mol,
-        input_mol,
-        args.anchor_num,
-        args.samples,
-        args.random_seed,
-    )
+        # Prepare boxsize.txt
+        prepare_boxsize_file(docking_dir, args.size, center_of_mass)
 
-    # Generate parameters.json
-    parameters, anchor_dict_list, new_atype2atype = generate_parameters_json(
-        scripts_path,
-        anchor_patterns,
-        pattern_mol,
-    )
+        # Find anchor points
+        anchor_patterns, anchor_positions, pattern_mol = find_anchor_points(
+            template_mol,
+            input_mol,
+            args.anchor_num,
+            args.samples,
+            args.random_seed,
+        )
 
-    # Save parameters.json
-    with open(os.path.join(args.docking_dir, "parameters.json"), "w") as f:
-        json.dump(parameters, f, indent=4)
+        # Generate parameters.json
+        parameters, anchor_dict_list, new_atype2atype = generate_parameters_json(
+            scripts_path,
+            anchor_patterns,
+            pattern_mol,
+        )
 
-    # Prepare ligand.pdbqt
-    prepare_ligand(args.docking_dir, input_mol)
+        # Save parameters.json
+        with open(os.path.join(docking_dir, "parameters.json"), "w") as f:
+            json.dump(parameters, f, indent=4)
 
-    # Prepare receptor.pdbqt
-    prepare_receptor(args.docking_dir, args.receptor_file, adfr_path)
+        # Prepare ligand.pdbqt
+        prepare_ligand(docking_dir, input_mol)
 
-    # Prepare grid
-    prepare_grid(args.docking_dir, scripts_path, adg_path)
+        # Prepare receptor.pdbqt
+        prepare_receptor(docking_dir, args.receptor_file, adfr_path)
 
-    # Add bias to the map file
-    add_bias_to_map_file(
-        args.docking_dir,
-        scripts_path,
-        anchor_dict_list,
-        anchor_positions,
-        new_atype2atype,
-    )
+        # Prepare grid
+        prepare_grid(docking_dir, scripts_path, adg_path)
 
-    # Run docking
-    run_docking(args.docking_dir, adg_path, anchor_dict_list, new_atype2atype)
+        # Add bias to the map file
+        add_bias_to_map_file(
+            docking_dir,
+            scripts_path,
+            anchor_dict_list,
+            anchor_positions,
+            new_atype2atype,
+        )
 
-    # Export results
-    export_results(args.docking_dir)
+        # Run docking
+        run_docking(docking_dir, adg_path, anchor_dict_list, new_atype2atype)
 
-    # Clean up if needed
-    if args.clean:
-        clean_directory(args.docking_dir)
+        # Export results
+        export_results(docking_dir)
+
+        # Clean up if needed
+        if args.clean:
+            clean_directory(docking_dir)
 
 if __name__ == "__main__":
     main()
