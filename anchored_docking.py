@@ -56,16 +56,28 @@ def parse_arguments():
     parser.add_argument("--input_file", help="Input SDF file", required=True)
     parser.add_argument("--receptor_file", help="Receptor PDB file", required=True)
     parser.add_argument("--docking_dir", help="Directory for docking", required=True)
+    parser.add_argument("--query_smarts", help="Manual SMARTS query for anchor points", default=None)
+    parser.add_argument("--anchor_indices", nargs="+", type=int, help="Specify anchor points by atom indices. Query SMILES must be provided. Indices is 0-based.", default=None)
+    parser.add_argument("--anchor_num", type=int, default=3, help="Number of anchor points")
+    parser.add_argument("--anchor_mode", choices=["random", "area"], default="random", help="Anchor point selection mode. the number of anchor of area mode is always 3.")
     parser.add_argument("--size", type=float, help="Size of docking box", default=20.0)
     parser.add_argument("--force", action="store_true", help="Force to overwrite the directory")
     parser.add_argument("--adg_path", default="autodock-gpu")
     parser.add_argument("--adfr_path", default="ADFRsuite-1.0")
     parser.add_argument("--scripts_path", default="scripts")
-    parser.add_argument("--anchor_num", type=int, default=3, help="Number of anchor points")
     parser.add_argument("--samples", type=int, default=100, help="Number of samples")
     parser.add_argument("--random_seed", type=int, default=None, help="Random seed for sampling")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--clean", action="store_true", help="Clean the directory after docking")
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.anchor_indices is not None and args.query_smarts is None:
+        raise ValueError("Query SMILES must be provided when anchor indices are specified.")
+    if args.anchor_indices is not None and args.anchor_num > 0:
+        print("Anchor indices are specified. Anchor number will be ignored.")
+    if args.anchor_indices is not None and args.anchor_mode == "area":
+        print("Anchor indices are specified. Anchor mode will be ignored.")
+    return args
 
 def prepare_docking_directory(docking_dir, force):
     if force:
@@ -77,7 +89,6 @@ def prepare_docking_directory(docking_dir, force):
             os.makedirs(docking_dir)
         else:
             raise ValueError(f"Directory '{docking_dir}' already exists. Use --force to overwrite.")
-
 
 def prepare_boxsize_file(docking_dir, size, center_of_mass):
     grid_dict = {
@@ -92,69 +103,107 @@ def prepare_boxsize_file(docking_dir, size, center_of_mass):
     with open(os.path.join(docking_dir, "boxsize.txt"), "w") as f:
         f.write(grid_text)
 
-def find_anchor_points(template_mol, input_mol, anchor_num, samples, random_seed):
-    mcs_res = rdFMCS.FindMCS(
-        [input_mol, template_mol],
-        atomCompare=rdFMCS.AtomCompare.CompareAny,
-        bondCompare=rdFMCS.BondCompare.CompareAny,
-        ringCompare=rdFMCS.RingCompare.StrictRingFusion,
-        matchValences=False,
-        ringMatchesRingOnly=True,
-        completeRingsOnly=True,
-        matchChiralTag=False,
-    )
-    substructure = input_mol.GetSubstructMatch(mcs_res.queryMol)
-    pattern_smiles = Chem.MolFragmentToSmiles(input_mol, substructure)
-    pattern_smarts = Chem.MolToSmarts(Chem.MolFromSmiles(pattern_smiles))
-    pattern_mol = Chem.MolFromSmiles(pattern_smiles)
-    smart_pattern_mol = Chem.MolFromSmarts(pattern_smarts)
-    input_mol.GetSubstructMatch(mcs_res.queryMol)
-
-    input2template_mapping = {
-        i: j
-        for i, j in zip(
-            input_mol.GetSubstructMatch(mcs_res.queryMol),
-            template_mol.GetSubstructMatch(mcs_res.queryMol),
+def find_anchor_points(template_mol, input_mol, anchor_num, samples, random_seed, query_smarts=None, anchor_indices=None, anchor_mode="random", verbose=False):
+    if verbose:
+        print("Template_SMILES:", Chem.MolToSmiles(template_mol))
+        print("Input_SMILES:", Chem.MolToSmiles(input_mol))
+    if query_smarts is not None:
+        pattern_smiles = query_smarts
+        pattern_smarts = query_smarts
+        pattern_mol = Chem.MolFromSmiles(pattern_smiles)
+        smart_pattern_mol = Chem.MolFromSmarts(pattern_smiles)
+        ptn2template_mapping = {
+            i: j
+            for i, j in zip(
+                pattern_mol.GetSubstructMatch(smart_pattern_mol),
+                template_mol.GetSubstructMatch(smart_pattern_mol),
+            )
+        }
+    else:
+        mcs_res = rdFMCS.FindMCS(
+            [input_mol, template_mol],
+            atomCompare=rdFMCS.AtomCompare.CompareAny,
+            bondCompare=rdFMCS.BondCompare.CompareAny,
+            ringCompare=rdFMCS.RingCompare.StrictRingFusion,
+            matchValences=False,
+            ringMatchesRingOnly=True,
+            completeRingsOnly=True,
+            matchChiralTag=False,
         )
-    }
-    ptn2input_mapping = {
-        i: j
-        for i, j in zip(
-            pattern_mol.GetSubstructMatch(smart_pattern_mol),
-            input_mol.GetSubstructMatch(smart_pattern_mol),
-        )
-    }
-    ptn2template = {i: input2template_mapping[j] for i, j in ptn2input_mapping.items()}
+        substructure = input_mol.GetSubstructMatch(mcs_res.queryMol)
+        pattern_smiles = Chem.MolFragmentToSmiles(input_mol, substructure)
+        pattern_smarts = Chem.MolToSmarts(Chem.MolFromSmiles(pattern_smiles))
+        pattern_mol = Chem.MolFromSmiles(pattern_smiles)
+        smart_pattern_mol = Chem.MolFromSmarts(pattern_smarts)
+        input2template_mapping = {
+            i: j
+            for i, j in zip(
+                input_mol.GetSubstructMatch(mcs_res.queryMol),
+                template_mol.GetSubstructMatch(mcs_res.queryMol),
+            )
+        }
+        ptn2input_mapping = {
+            i: j
+            for i, j in zip(
+                pattern_mol.GetSubstructMatch(smart_pattern_mol),
+                input_mol.GetSubstructMatch(smart_pattern_mol),
+            )
+        }
+        ptn2template_mapping = {i: input2template_mapping[j] for i, j in ptn2input_mapping.items()}
+    if verbose:
+        print("Pattern SMILES:", pattern_smiles)
+        print("Pattern SMARTS:", pattern_smarts)
 
     anchor_patterns_all = find_anchors(pattern_smarts)
     anchor_positions_all = [
-        template_mol.GetConformer().GetAtomPosition(ptn2template[idx])
+        list(template_mol.GetConformer().GetAtomPosition(ptn2template_mapping[idx]))
         for _, idx in anchor_patterns_all
     ]
 
-    if anchor_num > 0:
-        rng = np.random.default_rng(random_seed)
-        area_max = -1
-        anchor_patterns = None
-        for _ in range(samples):
-            if len(anchor_patterns_all) < anchor_num:
-                raise ValueError("Not enough anchor points found.")
-            sample_idx = rng.choice(len(anchor_patterns_all), size=anchor_num, replace=False)
-            positions = [np.array(anchor_positions_all[idx]) for idx in sample_idx]
-            if len(positions) < 3:
-                continue  # Cannot calculate area with less than 3 points
-            area = 0.5 * np.linalg.norm(
-                np.cross(positions[1] - positions[0], positions[2] - positions[0])
-            )
-            if area > area_max:
-                area_max = area
+    if anchor_indices is not None:
+        avail_anchors = [idx for anchor,idx in anchor_patterns_all]
+        if not all([idx in avail_anchors for idx in anchor_indices]):
+            raise ValueError("Some anchor indices are not found in the anchor points, Available anchor indices are: ", avail_anchors)
+        anchor_patterns = [(pattern_smarts, idx) for idx in anchor_indices]
+        anchor_positions = [
+            list(template_mol.GetConformer().GetAtomPosition(ptn2template_mapping[idx]))
+            for idx in anchor_indices
+        ]
+    else:
+        if anchor_num > 0:
+            rng = np.random.default_rng(random_seed)
+            if anchor_mode == "random":
+                if len(anchor_patterns_all) < anchor_num:
+                    raise ValueError("Not enough anchor points found.")
+                sample_idx = rng.choice(len(anchor_patterns_all), size=min(anchor_num, len(anchor_patterns_all)), replace=False)
                 anchor_patterns = [anchor_patterns_all[idx] for idx in sample_idx]
                 anchor_positions = [anchor_positions_all[idx] for idx in sample_idx]
-    else:
-        anchor_patterns = anchor_patterns_all
-        anchor_positions = anchor_positions_all
-
+            elif anchor_mode == "area":
+                anchor_num = 3
+                area_max = -1
+                anchor_patterns = None
+                anchor_positions = None
+                for _ in range(samples):
+                    if len(anchor_patterns_all) < anchor_num:
+                        raise ValueError("Not enough anchor points found.")
+                    sample_idx = rng.choice(len(anchor_patterns_all), size=anchor_num, replace=False)
+                    positions = [np.array(anchor_positions_all[idx]) for idx in sample_idx]
+                    if len(positions) != 3:
+                        raise ValueError("Not enough anchor points found.")
+                    area = 0.5 * np.linalg.norm(
+                        np.cross(positions[1] - positions[0], positions[2] - positions[0])
+                    )
+                    if area > area_max:
+                        area_max = area
+                        anchor_patterns = [anchor_patterns_all[idx] for idx in sample_idx]
+                        anchor_positions = [anchor_positions_all[idx] for idx in sample_idx]
+            else:
+                raise ValueError(f"Unknown anchor mode: {anchor_mode}")
+        else:
+            anchor_patterns = anchor_patterns_all
+            anchor_positions = anchor_positions_all
     return anchor_patterns, anchor_positions, pattern_mol
+
 
 def generate_parameters_json(scripts_path, anchor_patterns, pattern_mol):
     with open(os.path.join(scripts_path, "base_parameters.json")) as f:
@@ -183,12 +232,11 @@ def prepare_ligand(docking_dir, input_mol):
     ligand_sdf = os.path.join(docking_dir, "ligand.sdf")
     with Chem.SDWriter(ligand_sdf) as f:
         f.write(inputmol_h)
-    ret = subprocess.run(
+    subprocess.run(
         ["mk_prepare_ligand.py", "-p", "parameters.json", "-i", "ligand.sdf", "-o", "ligand.pdbqt"],
         cwd=docking_dir,
+        check=True
     )
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to prepare ligand: {ret.stderr}")
 
 def prepare_receptor(docking_dir, receptor_file, adfr_path):
     receptor_pdb = os.path.join(docking_dir, "receptor.pdb")
@@ -200,9 +248,7 @@ def prepare_receptor(docking_dir, receptor_file, adfr_path):
         "-o",
         "receptor.pdbqt",
     ]
-    ret = subprocess.run(prepare_receptor_cmd, cwd=docking_dir)
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to prepare receptor: {ret.stderr}")
+    subprocess.run(prepare_receptor_cmd, cwd=docking_dir, check=True)
 
 def prepare_grid(docking_dir, scripts_path, adg_path):
     write_gpf_cmd = [
@@ -213,13 +259,9 @@ def prepare_grid(docking_dir, scripts_path, adg_path):
         "--mapprefix",
         "rec",
     ]
-    ret = subprocess.run(write_gpf_cmd, cwd=docking_dir)
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to prepare grid (write-gpf): {ret.stderr}")
+    subprocess.run(write_gpf_cmd, cwd=docking_dir, check=True)
     autogrid_cmd = [os.path.join(adg_path, "autogrid4"), "-p", "rec.gpf", "-l", "rec.glg"]
-    ret = subprocess.run(autogrid_cmd, cwd=docking_dir)
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to prepare grid (autogrid4): {ret.stderr}")
+    subprocess.run(autogrid_cmd, cwd=docking_dir, check=True)
 
 def add_bias_to_map_file(docking_dir, scripts_path, anchor_dict_list, anchor_positions, new_atype2atype):
     for anchor_d, position in zip(anchor_dict_list, anchor_positions):
@@ -232,22 +274,18 @@ def add_bias_to_map_file(docking_dir, scripts_path, anchor_dict_list, anchor_pos
             "-o",
             f"rec.{atype}.map",
             "-x",
-            str(position.x),
-            str(position.y),
-            str(position.z),
+            str(position[0]),
+            str(position[1]),
+            str(position[2]),
         ]
-        ret = subprocess.run(addbias_cmd, cwd=docking_dir)
-        if ret.returncode != 0:
-            raise RuntimeError(f"Failed to add bias: {ret.stderr}")
+        subprocess.run(addbias_cmd, cwd=docking_dir, check=True)
         insert_type_cmd = [
             os.path.join(scripts_path, "insert_type_in_fld.py"),
             "rec.maps.fld",
             "--newtype",
             atype,
         ]
-        ret = subprocess.run(insert_type_cmd, cwd=docking_dir)
-        if ret.returncode != 0:
-            raise RuntimeError(f"Failed to insert type in fld: {ret.stderr}")
+        subprocess.run(insert_type_cmd, cwd=docking_dir, check=True)
 
 def run_docking(docking_dir, adg_path, anchor_dict_list, new_atype2atype):
     t_options_map = {}
@@ -266,15 +304,11 @@ def run_docking(docking_dir, adg_path, anchor_dict_list, new_atype2atype):
         "-T",
         t_options,
     ]
-    ret = subprocess.run(adgpu_cmd, cwd=docking_dir)
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to dock: {ret.stderr}")
+    subprocess.run(adgpu_cmd, cwd=docking_dir, check=True)
 
 def export_results(docking_dir):
     export_cmd = ["mk_export.py", "ligand.dlg", "-o", "ligand_docked.sdf"]
-    ret = subprocess.run(export_cmd, cwd=docking_dir)
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to export results: {ret.stderr}")
+    subprocess.run(export_cmd, cwd=docking_dir, check=True)
 
 def clean_directory(docking_dir):
     for f in os.listdir(docking_dir):
@@ -314,7 +348,14 @@ def main():
             args.anchor_num,
             args.samples,
             args.random_seed,
+            args.query_smarts,
+            args.anchor_indices,
+            args.anchor_mode,
+            args.verbose,
         )
+        with open(os.path.join(docking_dir, "anchor_positions.json"), "w") as f:
+            json.dump(anchor_positions, f, indent=4)
+
 
         # Generate parameters.json
         parameters, anchor_dict_list, new_atype2atype = generate_parameters_json(
