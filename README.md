@@ -15,7 +15,7 @@ While this method may be useful for applications like relative binding free ener
 The requirements are the same as those listed in the [Anchored Docking Guide](https://github.com/ccsb-scripps/AutoDock-GPU/wiki/Anchored-docking).
 
    - [RDKit](https://www.rdkit.org/)
-   - [Meeko<=0.6.1](https://github.com/forlilab/Meeko)
+   - [Meeko==0.6.1](https://github.com/forlilab/Meeko)
    - [ADFR](https://ccsb.scripps.edu/adfr/downloads/)
    - [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU/releases/)
    - [AutoGrid](https://autodock.scripps.edu/download-autodock4/)

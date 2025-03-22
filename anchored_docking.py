@@ -210,7 +210,7 @@ def find_anchor_points(template_mol, input_mol, anchor_num, samples, random_seed
 def generate_parameters_json(scripts_path, anchor_patterns, pattern_mol):
     with open(os.path.join(scripts_path, "base_parameters.json")) as f:
         base_parameters = json.load(f)
-    atom_types = base_parameters['ATOM_PARAMS']['ad4']
+    atom_types = base_parameters['ad4']
     parameters = copy.deepcopy(base_parameters)
 
     new_atype2atype = {}
@@ -223,7 +223,7 @@ def generate_parameters_json(scripts_path, anchor_patterns, pattern_mol):
             raise ValueError(f"Could not determine atom type for atom index {idx}.")
         new_atype = 'A' + base36encode(i, 2)
         d = {"smarts": smarts, "IDX": [idx + 1], "atype": new_atype}
-        parameters['ATOM_PARAMS']['ad4'].append(d)
+        parameters['ad4'].append(d)
         anchor_dict_list.append(d)
         new_atype2atype[new_atype] = atype
     return parameters, anchor_dict_list, new_atype2atype
