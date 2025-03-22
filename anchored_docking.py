@@ -8,6 +8,8 @@ import subprocess
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
+import meeko
+meeko_version = meeko.__version__
 
 def base36encode(number, length=2):
     chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -307,7 +309,10 @@ def run_docking(docking_dir, adg_path, anchor_dict_list, new_atype2atype):
     subprocess.run(adgpu_cmd, cwd=docking_dir, check=True)
 
 def export_results(docking_dir):
-    export_cmd = ["mk_export.py", "ligand.dlg", "-o", "ligand_docked.sdf"]
+    if meeko_version and meeko_version >= "0.6.0":
+        export_cmd = ["mk_export.py", "ligand.dlg", "-s", "ligand_docked.sdf"]
+    else:
+        export_cmd = ["mk_export.py", "ligand.dlg", "-o", "ligand_docked.sdf"]
     subprocess.run(export_cmd, cwd=docking_dir, check=True)
 
 def clean_directory(docking_dir):
