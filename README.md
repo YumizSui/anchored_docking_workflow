@@ -19,7 +19,8 @@ The requirements are the same as those listed in the [Anchored Docking Guide](ht
    - [ADFR](https://ccsb.scripps.edu/adfr/downloads/)
    - [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU/releases/)
    - [AutoGrid](https://autodock.scripps.edu/download-autodock4/)
-   - Download and extract `scripts.zip` from the [Anchored Docking Guide](https://github.com/ccsb-scripps/AutoDock-GPU/wiki/Anchored-docking).
+   - Download and extract `scripts.zip` from the ~~[Anchored Docking Guide](https://github.com/ccsb-scripps/AutoDock-GPU/wiki/Anchored-docking)~~.
+        - Since the above page has been removed, please download `write-gpf.py` from https://github.com/diogomart/write-autogrid-config, and download `addbias.py` and `insert_type_in_fld.py` with reference to https://github.com/ccsb-scripps/AutoDock-GPU/issues/283. Place these files in the `scripts` directory. Note that these download links are temporary and likely to change in the future.
 
 ## Usage
 
